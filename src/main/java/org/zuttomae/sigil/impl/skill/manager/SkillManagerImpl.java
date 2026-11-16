@@ -115,16 +115,24 @@ public final class SkillManagerImpl implements SkillManager {
 
     private <S> void executeStart(SkillInstance<S> instance) {
         this.instance = instance;
-        instance.getSkill().value().getStartBehavior().execute(instance);
+        try {
+            instance.getSkill().value().getStartBehavior().execute(instance);
+        } catch (Throwable throwable) {
+            executeEnd(instance);
+            throw throwable;
+        }
 
-        if (isCasting() && isReadyToComplete(instance)) {
+        if (this.instance == instance && isReadyToComplete(instance)) {
             executeComplete(instance);
         }
     }
 
     private <S> void executeComplete(SkillInstance<S> instance) {
-        instance.getSkill().value().getCompleteBehavior().execute(instance);
-        executeEnd(instance);
+        try {
+            instance.getSkill().value().getCompleteBehavior().execute(instance);
+        } finally {
+            executeEnd(instance);
+        }
     }
 
     private <S> boolean executeCancel(SkillInstance<S> instance) {
@@ -132,8 +140,12 @@ public final class SkillManagerImpl implements SkillManager {
             return false;
         }
 
-        instance.getSkill().value().getCancelBehavior().execute(instance);
-        executeEnd(instance);
+        try {
+            instance.getSkill().value().getCancelBehavior().execute(instance);
+        } finally {
+            executeEnd(instance);
+        }
+
         return true;
     }
 
@@ -142,22 +154,38 @@ public final class SkillManagerImpl implements SkillManager {
             return false;
         }
 
-        instance.getSkill().value().getInterruptBehavior().execute(instance);
-        executeEnd(instance);
+        try {
+            instance.getSkill().value().getInterruptBehavior().execute(instance);
+        } finally {
+            executeEnd(instance);
+        }
+
         return true;
     }
 
     private <S> void executeEnd(SkillInstance<S> instance) {
-        instance.getSkill().value().getEndBehavior().execute(instance);
-        instance.getAttributeModifierTracker().clearModifiers();
+        if (this.instance != instance) {
+            return;
+        }
+
         this.instance = null;
+        try {
+            instance.getSkill().value().getEndBehavior().execute(instance);
+        } finally {
+            instance.getAttributeModifierTracker().clearModifiers();
+        }
     }
 
     private <S> void executeTick(SkillInstance<S> instance) {
         ((SkillInstanceImpl<?>) instance).update();
-        instance.getSkill().value().getTickBehavior().execute(instance);
+        try {
+            instance.getSkill().value().getTickBehavior().execute(instance);
+        } catch (Throwable throwable) {
+            executeEnd(instance);
+            throw throwable;
+        }
 
-        if (isCasting() && isReadyToComplete(instance)) {
+        if (this.instance == instance && isReadyToComplete(instance)) {
             executeComplete(instance);
         }
     }
