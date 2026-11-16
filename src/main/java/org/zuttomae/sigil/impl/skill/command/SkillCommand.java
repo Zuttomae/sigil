@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.Dynamic3CommandExceptionType;
 import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import net.minecraft.commands.CommandSourceStack;
@@ -29,6 +30,9 @@ public final class SkillCommand {
     );
     private static final DynamicCommandExceptionType NOT_FOUND_EXCEPTION = new DynamicCommandExceptionType(
             id -> Component.translatableEscape("skill.notFound", id)
+    );
+    private static final Dynamic3CommandExceptionType CAST_FAILED_EXCEPTION = new Dynamic3CommandExceptionType(
+            (skill, target, reason) -> Component.translatableEscape("commands.skill.cast.failure", skill, target, reason)
     );
     private static final SimpleCommandExceptionType ADD_FAILED_EXCEPTION = new SimpleCommandExceptionType(
             Component.translatable("commands.skill.add.failed")
@@ -297,16 +301,18 @@ public final class SkillCommand {
             Entity target,
             Holder<? extends Skill<?>> skill
     ) throws CommandSyntaxException {
-        switch (
+        return switch (
                 getLivingEntity(target).getSkillManager().testSkill(skill)
         ) {
-            case SkillResponse.Success ignored ->
-                    stack.sendSuccess(() -> Component.translatable("commands.skill.test.success", skill.value().getName(), target.getName()), true);
-            case SkillResponse.Failure(Component reason) ->
-                    stack.sendSuccess(() -> Component.translatable("commands.skill.test.failure", skill.value().getName(), target.getName(), reason), true);
-        }
-
-        return 1;
+            case SkillResponse.Success ignored -> {
+                stack.sendSuccess(() -> Component.translatable("commands.skill.test.success", skill.value().getName(), target.getName()), false);
+                yield 1;
+            }
+            case SkillResponse.Failure(Component reason) -> {
+                stack.sendSuccess(() -> Component.translatable("commands.skill.test.failure", skill.value().getName(), target.getName(), reason), false);
+                yield 0;
+            }
+        };
     }
 
     private static int executeCast(
@@ -314,15 +320,11 @@ public final class SkillCommand {
             Entity target,
             Holder<? extends Skill<?>> skill
     ) throws CommandSyntaxException {
-        switch (
-                getLivingEntity(target).getSkillManager().castSkill(skill)
-        ) {
-            case SkillResponse.Success ignored ->
-                    stack.sendSuccess(() -> Component.translatable("commands.skill.cast.success", skill.value().getName(), target.getName()), true);
-            case SkillResponse.Failure(Component reason) ->
-                    stack.sendSuccess(() -> Component.translatable("commands.skill.cast.failure", skill.value().getName(), target.getName(), reason), true);
+        if (getLivingEntity(target).getSkillManager().castSkill(skill) instanceof SkillResponse.Failure(Component reason)) {
+            throw CAST_FAILED_EXCEPTION.create(skill.value().getName(), target.getName(), reason);
         }
 
+        stack.sendSuccess(() -> Component.translatable("commands.skill.cast.success", skill.value().getName(), target.getName()), true);
         return 1;
     }
 
@@ -370,9 +372,9 @@ public final class SkillCommand {
         int cooldown = getLivingEntity(target).getSkillCooldownManager().getCooldown(skill);
 
         if (cooldown > 0) {
-            stack.sendSuccess(() -> Component.translatable("commands.skill.cooldown.get.success", skill.value().getName(), target.getName(), cooldown), true);
+            stack.sendSuccess(() -> Component.translatable("commands.skill.cooldown.get.success", skill.value().getName(), target.getName(), cooldown), false);
         } else {
-            stack.sendSuccess(() -> Component.translatable("commands.skill.cooldown.get.none", skill.value().getName(), target.getName()), true);
+            stack.sendSuccess(() -> Component.translatable("commands.skill.cooldown.get.none", skill.value().getName(), target.getName()), false);
         }
 
         return cooldown;
