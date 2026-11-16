@@ -124,11 +124,14 @@ public final class SkillContainerImpl implements SkillContainer {
 
     @Override
     public boolean addPermanentSkill(Holder<? extends Skill<?>> skill, Identifier source) {
-        if (!addTransientSkill(skill, source)) {
+        Objects.requireNonNull(skill);
+        Objects.requireNonNull(source);
+
+        if (!permanentSkillsBySource.put(source, skill)) {
             return false;
         }
 
-        permanentSkillsBySource.put(source, skill);
+        addTransientSkill(skill, source);
         return true;
     }
 
