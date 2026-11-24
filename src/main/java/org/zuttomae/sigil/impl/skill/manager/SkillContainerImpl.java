@@ -10,9 +10,7 @@ import net.minecraft.world.entity.LivingEntity;
 import org.jetbrains.annotations.Nullable;
 import org.zuttomae.sigil.api.skill.Skill;
 import org.zuttomae.sigil.api.skill.SkillContext;
-import org.zuttomae.sigil.api.skill.event.SkillAddedCallback;
-import org.zuttomae.sigil.api.skill.event.SkillLoadedCallback;
-import org.zuttomae.sigil.api.skill.event.SkillRemovedCallback;
+import org.zuttomae.sigil.api.skill.event.SkillContainerEvents;
 import org.zuttomae.sigil.api.skill.manager.SkillContainer;
 import org.zuttomae.sigil.api.skill.registry.SkillRegistries;
 import org.zuttomae.sigil.impl.skill.SkillContextImpl;
@@ -243,21 +241,21 @@ public final class SkillContainerImpl implements SkillContainer {
         SkillContext<S> context = createContext(skill);
 
         skill.value().getAttributeModifiers().applyTemporaryModifiers(getOwnerOrThrow().getAttributes());
-        SkillAddedCallback.EVENT.invoker().onAdded(context);
+        SkillContainerEvents.ADDED.invoker().onAdded(context);
     }
 
     private <S> void handleSkillRemoved(Holder<? extends Skill<S>> skill) {
         SkillContext<S> context = createContext(skill);
 
         skill.value().getAttributeModifiers().removeModifiers(getOwnerOrThrow().getAttributes());
-        SkillRemovedCallback.EVENT.invoker().onRemoved(context);
+        SkillContainerEvents.REMOVED.invoker().onRemoved(context);
     }
 
     private <S> void handleSkillLoaded(Holder<? extends Skill<S>> skill) {
         SkillContext<S> context = createContext(skill);
 
         skill.value().getAttributeModifiers().applyTemporaryModifiers(getOwnerOrThrow().getAttributes());
-        SkillLoadedCallback.EVENT.invoker().onLoaded(context);
+        SkillContainerEvents.LOADED.invoker().onLoaded(context);
     }
 
     private <S> SkillContext<S> createContext(Holder<? extends Skill<S>> skill) {

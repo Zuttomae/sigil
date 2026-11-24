@@ -8,7 +8,8 @@ import org.zuttomae.sigil.api.skill.Skill;
 import org.zuttomae.sigil.api.skill.SkillContext;
 import org.zuttomae.sigil.api.skill.SkillInstance;
 import org.zuttomae.sigil.api.skill.SkillResponse;
-import org.zuttomae.sigil.api.skill.event.SkillTestCallback;
+import org.zuttomae.sigil.api.skill.event.SkillCastEndReason;
+import org.zuttomae.sigil.api.skill.event.SkillCastEvents;
 import org.zuttomae.sigil.api.skill.manager.SkillManager;
 import org.zuttomae.sigil.api.skill.state.SkillStateCreationResult;
 import org.zuttomae.sigil.impl.skill.SkillContextImpl;
@@ -69,7 +70,7 @@ public final class SkillManagerImpl implements SkillManager {
             return false;
         }
 
-        executeEnd(instance);
+        executeEnd(instance, SkillCastEndReason.TERMINATED);
         return true;
     }
 
@@ -93,7 +94,7 @@ public final class SkillManagerImpl implements SkillManager {
         }
 
         SkillContext<S> context = createContext(skill);
-        return SkillTestCallback.EVENT.invoker().onTest(context) instanceof SkillResponse.Failure failure ?
+        return SkillCastEvents.ALLOW.invoker().onAllow(context) instanceof SkillResponse.Failure failure ?
                 failure :
                 skill.value().getCondition().test(context);
     }
@@ -116,9 +117,26 @@ public final class SkillManagerImpl implements SkillManager {
     private <S> void executeStart(SkillInstance<S> instance) {
         this.instance = instance;
         try {
-            instance.getSkill().value().getStartBehavior().execute(instance);
+            SkillCastEvents.STARTED.invoker().onStarted(instance);
+            if (this.instance == instance) {
+                instance.getSkill().value().getStartBehavior().execute(instance);
+            }
         } catch (Throwable throwable) {
-            executeEnd(instance);
+            executeFail(instance, throwable);
+            throw throwable;
+        }
+
+        if (this.instance == instance && isReadyToComplete(instance)) {
+            executeComplete(instance);
+        }
+    }
+
+    private <S> void executeTick(SkillInstance<S> instance) {
+        ((SkillInstanceImpl<?>) instance).update();
+        try {
+            instance.getSkill().value().getTickBehavior().execute(instance);
+        } catch (Throwable throwable) {
+            executeFail(instance, throwable);
             throw throwable;
         }
 
@@ -130,9 +148,12 @@ public final class SkillManagerImpl implements SkillManager {
     private <S> void executeComplete(SkillInstance<S> instance) {
         try {
             instance.getSkill().value().getCompleteBehavior().execute(instance);
-        } finally {
-            executeEnd(instance);
+        } catch (Throwable throwable) {
+            executeFail(instance, throwable);
+            throw throwable;
         }
+
+        executeEnd(instance, SkillCastEndReason.COMPLETED);
     }
 
     private <S> boolean executeCancel(SkillInstance<S> instance) {
@@ -142,10 +163,12 @@ public final class SkillManagerImpl implements SkillManager {
 
         try {
             instance.getSkill().value().getCancelBehavior().execute(instance);
-        } finally {
-            executeEnd(instance);
+        } catch (Throwable throwable) {
+            executeFail(instance, throwable);
+            throw throwable;
         }
 
+        executeEnd(instance, SkillCastEndReason.CANCELLED);
         return true;
     }
 
@@ -156,38 +179,45 @@ public final class SkillManagerImpl implements SkillManager {
 
         try {
             instance.getSkill().value().getInterruptBehavior().execute(instance);
-        } finally {
-            executeEnd(instance);
+        } catch (Throwable throwable) {
+            executeFail(instance, throwable);
+            throw throwable;
         }
 
+        executeEnd(instance, SkillCastEndReason.INTERRUPTED);
         return true;
     }
 
-    private <S> void executeEnd(SkillInstance<S> instance) {
+    private <S> void executeFail(SkillInstance<S> instance, Throwable cause) {
+        try {
+            executeEnd(instance, SkillCastEndReason.TERMINATED);
+        } catch (Throwable throwable) {
+            cause.addSuppressed(throwable);
+        }
+    }
+
+    private <S> void executeEnd(SkillInstance<S> instance, SkillCastEndReason reason) {
         if (this.instance != instance) {
             return;
         }
 
         this.instance = null;
         try {
-            instance.getSkill().value().getEndBehavior().execute(instance);
-        } finally {
-            instance.getAttributeModifierTracker().clearModifiers();
-        }
-    }
-
-    private <S> void executeTick(SkillInstance<S> instance) {
-        ((SkillInstanceImpl<?>) instance).update();
-        try {
-            instance.getSkill().value().getTickBehavior().execute(instance);
+            try {
+                instance.getSkill().value().getEndBehavior().execute(instance);
+            } finally {
+                instance.getAttributeModifierTracker().clearModifiers();
+            }
         } catch (Throwable throwable) {
-            executeEnd(instance);
+            try {
+                SkillCastEvents.ENDED.invoker().onEnded(instance, reason);
+            } catch (Throwable suppressed) {
+                throwable.addSuppressed(suppressed);
+            }
             throw throwable;
         }
 
-        if (this.instance == instance && isReadyToComplete(instance)) {
-            executeComplete(instance);
-        }
+        SkillCastEvents.ENDED.invoker().onEnded(instance, reason);
     }
 
     private boolean isReadyToComplete(SkillInstance<?> instance) {

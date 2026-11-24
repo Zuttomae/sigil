@@ -7,13 +7,12 @@ import net.minecraft.world.entity.LivingEntity;
 import org.jetbrains.annotations.Nullable;
 import org.zuttomae.sigil.api.skill.Skill;
 import org.zuttomae.sigil.api.skill.SkillContext;
-import org.zuttomae.sigil.api.skill.event.SkillCooldownEndedCallback;
-import org.zuttomae.sigil.api.skill.event.SkillCooldownStartedCallback;
+import org.zuttomae.sigil.api.skill.event.SkillCooldownEvents;
 import org.zuttomae.sigil.api.skill.manager.SkillCooldownManager;
 import org.zuttomae.sigil.api.skill.registry.SkillRegistries;
 import org.zuttomae.sigil.impl.skill.SkillContextImpl;
 
-import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -68,7 +67,7 @@ public final class SkillCooldownManagerImpl implements SkillCooldownManager {
         Objects.requireNonNull(skill);
         if (cooldown > 0) {
             if (cooldowns.put(skill, cooldown) == null) {
-                handleCooldownStarted((Holder<? extends Skill<Object>>) skill);
+                handleCooldownStarted((Holder<? extends Skill<Object>>) skill, cooldown);
             }
         } else {
             if (cooldowns.remove(skill) != null) {
@@ -77,14 +76,10 @@ public final class SkillCooldownManagerImpl implements SkillCooldownManager {
         }
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public void clearCooldowns() {
-        Iterator<Map.Entry<Holder<? extends Skill<?>>, Integer>> iterator = cooldowns.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<Holder<? extends Skill<?>>, Integer> entry = iterator.next();
-            iterator.remove();
-            handleCooldownEnded((Holder<? extends Skill<Object>>) entry.getKey());
+        for (Holder<? extends Skill<?>> skill : List.copyOf(cooldowns.keySet())) {
+            setCooldown(skill, 0);
         }
     }
 
@@ -96,30 +91,22 @@ public final class SkillCooldownManagerImpl implements SkillCooldownManager {
         this.owner = Objects.requireNonNull(owner);
     }
 
-    @SuppressWarnings("unchecked")
     public void update() {
-        Iterator<Map.Entry<Holder<? extends Skill<?>>, Integer>> iterator = cooldowns.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<Holder<? extends Skill<?>>, Integer> entry = iterator.next();
-            if (entry.getValue() > 1) {
-                entry.setValue(entry.getValue() - 1);
-            } else {
-                iterator.remove();
-                handleCooldownEnded((Holder<? extends Skill<Object>>) entry.getKey());
-            }
+        for (Holder<? extends Skill<?>> skill : List.copyOf(cooldowns.keySet())) {
+            setCooldown(skill, getCooldown(skill) - 1);
         }
     }
 
-    private <S> void handleCooldownStarted(Holder<? extends Skill<S>> skill) {
-        SkillContext<?> context = createContext(skill);
+    private <S> void handleCooldownStarted(Holder<? extends Skill<S>> skill, int cooldownTicks) {
+        SkillContext<S> context = createContext(skill);
 
-        SkillCooldownStartedCallback.EVENT.invoker().onCooldownStarted(context);
+        SkillCooldownEvents.STARTED.invoker().onStarted(context, cooldownTicks);
     }
 
     private <S> void handleCooldownEnded(Holder<? extends Skill<S>> skill) {
-        SkillContext<?> context = createContext(skill);
+        SkillContext<S> context = createContext(skill);
 
-        SkillCooldownEndedCallback.EVENT.invoker().onCooldownEnded(context);
+        SkillCooldownEvents.ENDED.invoker().onEnded(context);
     }
 
     private <S> SkillContext<S> createContext(Holder<? extends Skill<S>> skill) {
